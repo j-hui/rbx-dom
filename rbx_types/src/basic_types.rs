@@ -2,6 +2,9 @@ use thiserror::Error;
 
 use crate::Error;
 
+#[cfg(feature = "mlua")]
+use mlua::prelude::*;
+
 /// Represents any Roblox enum value.
 ///
 /// Roblox enums are not strongly typed, so the meaning of a value depends on
@@ -29,6 +32,20 @@ impl Enum {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Enum {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        Ok(Enum::from_u32(u32::from_lua(value, lua)?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> IntoLua<'lua> for Enum {
+    fn into_lua(self, lua: &'lua Lua) -> LuaResult<LuaValue<'lua>> {
+        self.to_u32().into_lua(lua)
+    }
+}
+
 /// The standard 2D vector type used in Roblox.
 ///
 /// ## See Also
@@ -43,6 +60,79 @@ pub struct Vector2 {
 impl Vector2 {
     pub fn new(x: f32, y: f32) -> Self {
         Self { x, y }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Vector2 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("X")?, value.get("Y")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Vector2 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("X", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("x", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("Magnitude", |_lua, this| {
+            Ok((this.x.powi(2) + this.y.powi(2)).sqrt())
+        });
+        fields.add_field_method_get("Unit", |lua, this| {
+            let mag = (this.x.powi(2) + this.y.powi(2)).sqrt();
+            lua.create_userdata(Self::new(this.x / mag, this.y / mag))
+        });
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(this.x + other.x, this.y + other.y))
+        });
+        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(this.x - other.x, this.y - other.y))
+        });
+        methods.add_meta_method(
+            LuaMetaMethod::Mul,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(this.x * other.x, this.y * other.y))
+                }
+                LuaValue::Number(num) => {
+                    lua.create_userdata(Self::new(this.x * num as f32, this.y * num as f32))
+                }
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Mul.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
+        methods.add_meta_method(
+            LuaMetaMethod::Div,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(this.x / other.x, this.y / other.y))
+                }
+                LuaValue::Number(num) => {
+                    lua.create_userdata(Self::new(this.x / num as f32, this.y / num as f32))
+                }
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Div.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
     }
 }
 
@@ -63,6 +153,72 @@ pub struct Vector2int16 {
 impl Vector2int16 {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Vector2int16 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("X")?, value.get("Y")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Vector2int16 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("X", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("x", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("y", |_lua, this| Ok(this.y));
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(this.x + other.x, this.y + other.y))
+        });
+        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(this.x - other.x, this.y - other.y))
+        });
+        methods.add_meta_method(
+            LuaMetaMethod::Mul,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(this.x * other.x, this.y * other.y))
+                }
+                LuaValue::Number(num) => {
+                    lua.create_userdata(Self::new(this.x * num as i16, this.y * num as i16))
+                }
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Mul.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
+        methods.add_meta_method(
+            LuaMetaMethod::Div,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(this.x / other.x, this.y / other.y))
+                }
+                LuaValue::Number(num) => {
+                    lua.create_userdata(Self::new(this.x / num as i16, this.y / num as i16))
+                }
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Div.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
     }
 }
 
@@ -127,6 +283,101 @@ impl Vector3 {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Vector3 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("X")?, value.get("Y")?, value.get("Z")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Vector3 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("X", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("Z", |_lua, this| Ok(this.z));
+        fields.add_field_method_get("x", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("z", |_lua, this| Ok(this.z));
+        fields.add_field_method_get("Magnitude", |_lua, this| {
+            Ok((this.x.powi(2) + this.y.powi(2) + this.z.powi(2)).sqrt())
+        });
+        fields.add_field_method_get("Unit", |lua, this| {
+            let mag = (this.x.powi(2) + this.y.powi(2) + this.z.powi(2)).sqrt();
+            lua.create_userdata(Self::new(this.x / mag, this.y / mag, this.z / mag))
+        });
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(
+                this.x + other.x,
+                this.y + other.y,
+                this.z + other.z,
+            ))
+        });
+        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(
+                this.x - other.x,
+                this.y - other.y,
+                this.z - other.z,
+            ))
+        });
+        methods.add_meta_method(
+            LuaMetaMethod::Mul,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(
+                        this.x * other.x,
+                        this.y * other.y,
+                        this.z * other.z,
+                    ))
+                }
+                LuaValue::Number(num) => lua.create_userdata(Self::new(
+                    this.x * num as f32,
+                    this.y * num as f32,
+                    this.z * num as f32,
+                )),
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Mul.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
+        methods.add_meta_method(
+            LuaMetaMethod::Div,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(
+                        this.x / other.x,
+                        this.y / other.y,
+                        this.z / other.z,
+                    ))
+                }
+                LuaValue::Number(num) => lua.create_userdata(Self::new(
+                    this.x / num as f32,
+                    this.y / num as f32,
+                    this.z / num as f32,
+                )),
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Div.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
+    }
+}
+
 /// A version of [`Vector3`][Vector3] whose coordinates are signed 16-bit
 /// integers. `Vector3int16` is often used when working with Terrain.
 ///
@@ -145,6 +396,94 @@ pub struct Vector3int16 {
 impl Vector3int16 {
     pub fn new(x: i16, y: i16, z: i16) -> Self {
         Self { x, y, z }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Vector3int16 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("X")?, value.get("Y")?, value.get("Z")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Vector3int16 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("X", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("Z", |_lua, this| Ok(this.z));
+        fields.add_field_method_get("x", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("z", |_lua, this| Ok(this.z));
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(
+                this.x + other.x,
+                this.y + other.y,
+                this.z + other.z,
+            ))
+        });
+        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
+            lua.create_userdata(Self::new(
+                this.x - other.x,
+                this.y - other.y,
+                this.z - other.z,
+            ))
+        });
+        methods.add_meta_method(
+            LuaMetaMethod::Mul,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(
+                        this.x * other.x,
+                        this.y * other.y,
+                        this.z * other.z,
+                    ))
+                }
+                LuaValue::Number(num) => lua.create_userdata(Self::new(
+                    this.x * num as i16,
+                    this.y * num as i16,
+                    this.z * num as i16,
+                )),
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Mul.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
+        methods.add_meta_method(
+            LuaMetaMethod::Div,
+            |lua, this, other: LuaValue| match other {
+                LuaValue::UserData(_) => {
+                    let other = Self::from_lua(other, lua)?;
+                    lua.create_userdata(Self::new(
+                        this.x / other.x,
+                        this.y / other.y,
+                        this.z / other.z,
+                    ))
+                }
+                LuaValue::Number(num) => lua.create_userdata(Self::new(
+                    this.x / num as i16,
+                    this.y / num as i16,
+                    this.z / num as i16,
+                )),
+                _ => Err(LuaError::MetaMethodTypeError {
+                    method: LuaMetaMethod::Div.to_string(),
+                    type_name: other.type_name(),
+                    message: Some("expected Vector or number".to_string()),
+                }),
+            },
+        );
     }
 }
 
@@ -169,6 +508,60 @@ impl CFrame {
             position,
             orientation,
         }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for CFrame {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            value.get("Position")?,
+            Matrix3::new(
+                value.get("XVector")?,
+                value.get("YVector")?,
+                value.get("ZVector")?,
+            ),
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for CFrame {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Position", |_lua, this| Ok(this.position));
+        fields.add_field_method_get("XVector", |_lua, this| Ok(this.orientation.x));
+        fields.add_field_method_get("YVector", |_lua, this| Ok(this.orientation.y));
+        fields.add_field_method_get("ZVector", |_lua, this| Ok(this.orientation.z));
+        fields.add_field_method_get("Rotation", |lua, this| {
+            lua.create_userdata(Self::new(Vector3::new(0.0, 0.0, 0.0), this.orientation))
+        });
+        fields.add_field_method_get("RightVector", |lua, this| {
+            let o = &this.orientation;
+            lua.create_userdata(Vector3::new(o.x.x, o.y.x, o.z.x))
+        });
+        fields.add_field_method_get("UpVector", |lua, this| {
+            let o = &this.orientation;
+            lua.create_userdata(Vector3::new(o.x.y, o.y.y, o.z.y))
+        });
+        fields.add_field_method_get("LookVector", |lua, this| {
+            let o = &this.orientation;
+            lua.create_userdata(Vector3::new(-o.x.z, -o.y.z, -o.z.z))
+        });
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("GetComponents", |_lua, this, ()| {
+            let p = &this.position;
+            let o = &this.orientation;
+            Ok((p.x, p.y, p.z, o.x.x, o.x.y, o.x.z, o.y.x, o.y.y, o.y.z, o.z.x, o.z.y, o.z.z))
+        });
+        // WIP: missing more methods, missing arithmetic stuff
     }
 }
 
