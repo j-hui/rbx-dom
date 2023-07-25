@@ -11,7 +11,8 @@ homepage = "https://github.com/rojo-rbx/rbx-dom"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-mlua = ["dep:mlua"]
+impl = ["dep:nalgebra"]
+mlua = ["impl", "dep:mlua"]
 
 [dependencies]
 base64 = "0.13.0"
@@ -22,6 +23,7 @@ rand = "0.8.5"
 thiserror = "1.0.31"
 serde = { version = "1.0.137", features = ["derive"], optional = true }
 mlua = { version = "0.9.0-rc.1", features = ["luau"], optional = true }
+nalgebra = { version = "0.32.3", optional = true }
 
 [dev-dependencies]
 insta = { version="1.14.1", features=["yaml"] }

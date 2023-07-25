@@ -2,8 +2,74 @@ use thiserror::Error;
 
 use crate::Error;
 
+#[cfg(feature = "impl")]
+use nalgebra as na;
+
+#[cfg(feature = "impl")]
+use std::ops::{Add, Div, Mul, Sub};
+
 #[cfg(feature = "mlua")]
 use mlua::prelude::*;
+
+#[cfg(feature = "impl")]
+macro_rules! impl_vector_methods {
+    (for $vec_t:ty where $scalar_t:ty) => {
+        pub fn magnitude(&self) -> $scalar_t {
+            self.into_alg().magnitude()
+        }
+
+        pub fn unit(&self) -> Self {
+            self.into_alg().normalize().into()
+        }
+    };
+}
+
+#[cfg(feature = "impl")]
+macro_rules! impl_vector_ops {
+    (for $vec_t:ty where $scalar_t:ty) => {
+        impl Add for $vec_t {
+            type Output = Self;
+            fn add(self, rhs: Self) -> Self::Output {
+                (self.into_alg() + rhs.into_alg()).into()
+            }
+        }
+
+        impl Sub for $vec_t {
+            type Output = Self;
+            fn sub(self, rhs: Self) -> Self::Output {
+                (self.into_alg() - rhs.into_alg()).into()
+            }
+        }
+
+        impl Mul<Self> for $vec_t {
+            type Output = Self;
+            fn mul(self, rhs: Self) -> Self::Output {
+                (self.into_alg().component_mul(&rhs.into_alg())).into()
+            }
+        }
+
+        impl Mul<$scalar_t> for $vec_t {
+            type Output = Self;
+            fn mul(self, rhs: $scalar_t) -> Self::Output {
+                (self.into_alg() * rhs).into()
+            }
+        }
+
+        impl Div<Self> for $vec_t {
+            type Output = Self;
+            fn div(self, rhs: Self) -> Self::Output {
+                (self.into_alg().component_div(&rhs.into_alg())).into()
+            }
+        }
+
+        impl Div<$scalar_t> for $vec_t {
+            type Output = Self;
+            fn div(self, rhs: $scalar_t) -> Self::Output {
+                (self.into_alg() / rhs).into()
+            }
+        }
+    };
+}
 
 /// Represents any Roblox enum value.
 ///
@@ -61,7 +127,32 @@ impl Vector2 {
     pub fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
+
+    #[cfg(feature = "impl")]
+    fn into_alg(self) -> na::Vector2<f32> {
+        self.into()
+    }
+
+    #[cfg(feature = "impl")]
+    impl_vector_methods! {for Vector2 where f32}
 }
+
+#[cfg(feature = "impl")]
+impl From<na::Vector2<f32>> for Vector2 {
+    fn from(value: na::Vector2<f32>) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector2> for na::Vector2<f32> {
+    fn from(value: Vector2) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl_vector_ops! {for Vector2 where f32}
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Vector2 {
@@ -83,56 +174,31 @@ impl LuaUserData for Vector2 {
         fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
         fields.add_field_method_get("x", |_lua, this| Ok(this.x));
         fields.add_field_method_get("y", |_lua, this| Ok(this.y));
-        fields.add_field_method_get("Magnitude", |_lua, this| {
-            Ok((this.x.powi(2) + this.y.powi(2)).sqrt())
-        });
-        fields.add_field_method_get("Unit", |lua, this| {
-            let mag = (this.x.powi(2) + this.y.powi(2)).sqrt();
-            lua.create_userdata(Self::new(this.x / mag, this.y / mag))
-        });
+        fields.add_field_method_get("Magnitude", |_lua, this| Ok(this.magnitude()));
+        fields.add_field_method_get("Unit", |_lua, this| Ok(this.unit()));
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(this.x + other.x, this.y + other.y))
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this * num as f32),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Mul.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(this.x - other.x, this.y - other.y))
+        methods.add_meta_method(LuaMetaMethod::Div, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this / Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this / num as f32),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Div.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(
-            LuaMetaMethod::Mul,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(this.x * other.x, this.y * other.y))
-                }
-                LuaValue::Number(num) => {
-                    lua.create_userdata(Self::new(this.x * num as f32, this.y * num as f32))
-                }
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Mul.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
-        methods.add_meta_method(
-            LuaMetaMethod::Div,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(this.x / other.x, this.y / other.y))
-                }
-                LuaValue::Number(num) => {
-                    lua.create_userdata(Self::new(this.x / num as f32, this.y / num as f32))
-                }
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Div.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
     }
 }
 
@@ -154,7 +220,29 @@ impl Vector2int16 {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
+
+    #[cfg(feature = "impl")]
+    fn into_alg(self) -> na::Vector2<i16> {
+        self.into()
+    }
 }
+
+#[cfg(feature = "impl")]
+impl From<na::Vector2<i16>> for Vector2int16 {
+    fn from(value: na::Vector2<i16>) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector2int16> for na::Vector2<i16> {
+    fn from(value: Vector2int16) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl_vector_ops! {for Vector2int16 where i16}
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Vector2int16 {
@@ -179,46 +267,26 @@ impl LuaUserData for Vector2int16 {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(this.x + other.x, this.y + other.y))
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this * num as i16),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Mul.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(this.x - other.x, this.y - other.y))
+        methods.add_meta_method(LuaMetaMethod::Div, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this / Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this / num as i16),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Div.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(
-            LuaMetaMethod::Mul,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(this.x * other.x, this.y * other.y))
-                }
-                LuaValue::Number(num) => {
-                    lua.create_userdata(Self::new(this.x * num as i16, this.y * num as i16))
-                }
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Mul.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
-        methods.add_meta_method(
-            LuaMetaMethod::Div,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(this.x / other.x, this.y / other.y))
-                }
-                LuaValue::Number(num) => {
-                    lua.create_userdata(Self::new(this.x / num as i16, this.y / num as i16))
-                }
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Div.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
     }
 }
 
@@ -281,7 +349,60 @@ impl Vector3 {
             _ => None,
         }
     }
+
+    #[cfg(feature = "impl")]
+    fn into_alg(self) -> na::Vector3<f32> {
+        self.into()
+    }
+
+    #[cfg(feature = "impl")]
+    impl_vector_methods! {for Vector2 where f32}
 }
+
+#[cfg(feature = "impl")]
+impl From<na::Vector3<f32>> for Vector3 {
+    fn from(value: na::Vector3<f32>) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector3> for na::Vector3<f32> {
+    fn from(value: Vector3) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::Point3<f32>> for Vector3 {
+    fn from(value: na::Point3<f32>) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector3> for na::Point3<f32> {
+    fn from(value: Vector3) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::Translation3<f32>> for Vector3 {
+    fn from(value: na::Translation3<f32>) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector3> for na::Translation3<f32> {
+    fn from(value: Vector3) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl_vector_ops! {for Vector3 where f32}
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Vector3 {
@@ -305,76 +426,31 @@ impl LuaUserData for Vector3 {
         fields.add_field_method_get("x", |_lua, this| Ok(this.x));
         fields.add_field_method_get("y", |_lua, this| Ok(this.y));
         fields.add_field_method_get("z", |_lua, this| Ok(this.z));
-        fields.add_field_method_get("Magnitude", |_lua, this| {
-            Ok((this.x.powi(2) + this.y.powi(2) + this.z.powi(2)).sqrt())
-        });
-        fields.add_field_method_get("Unit", |lua, this| {
-            let mag = (this.x.powi(2) + this.y.powi(2) + this.z.powi(2)).sqrt();
-            lua.create_userdata(Self::new(this.x / mag, this.y / mag, this.z / mag))
-        });
+        fields.add_field_method_get("Magnitude", |_lua, this| Ok(this.magnitude()));
+        fields.add_field_method_get("Unit", |_lua, this| Ok(this.unit()));
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(
-                this.x + other.x,
-                this.y + other.y,
-                this.z + other.z,
-            ))
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this * num as f32),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Mul.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(
-                this.x - other.x,
-                this.y - other.y,
-                this.z - other.z,
-            ))
+        methods.add_meta_method(LuaMetaMethod::Div, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this / Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this / num as f32),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Div.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(
-            LuaMetaMethod::Mul,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(
-                        this.x * other.x,
-                        this.y * other.y,
-                        this.z * other.z,
-                    ))
-                }
-                LuaValue::Number(num) => lua.create_userdata(Self::new(
-                    this.x * num as f32,
-                    this.y * num as f32,
-                    this.z * num as f32,
-                )),
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Mul.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
-        methods.add_meta_method(
-            LuaMetaMethod::Div,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(
-                        this.x / other.x,
-                        this.y / other.y,
-                        this.z / other.z,
-                    ))
-                }
-                LuaValue::Number(num) => lua.create_userdata(Self::new(
-                    this.x / num as f32,
-                    this.y / num as f32,
-                    this.z / num as f32,
-                )),
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Div.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
     }
 }
 
@@ -397,7 +473,29 @@ impl Vector3int16 {
     pub fn new(x: i16, y: i16, z: i16) -> Self {
         Self { x, y, z }
     }
+
+    #[cfg(feature = "impl")]
+    fn into_alg(self) -> na::Vector3<i16> {
+        self.into()
+    }
 }
+
+#[cfg(feature = "impl")]
+impl From<na::Vector3<i16>> for Vector3int16 {
+    fn from(value: na::Vector3<i16>) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Vector3int16> for na::Vector3<i16> {
+    fn from(value: Vector3int16) -> Self {
+        Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl_vector_ops! {for Vector3int16 where i16}
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Vector3int16 {
@@ -424,66 +522,26 @@ impl LuaUserData for Vector3int16 {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Add, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(
-                this.x + other.x,
-                this.y + other.y,
-                this.z + other.z,
-            ))
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this * num as i16),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Mul.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(LuaMetaMethod::Sub, |lua, this, other: Self| {
-            lua.create_userdata(Self::new(
-                this.x - other.x,
-                this.y - other.y,
-                this.z - other.z,
-            ))
+        methods.add_meta_method(LuaMetaMethod::Div, |lua, &this, rhs: LuaValue| match rhs {
+            LuaValue::UserData(_) => Ok(this / Self::from_lua(rhs, lua)?),
+            LuaValue::Number(num) => Ok(this / num as i16),
+            _ => Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Div.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector or number".to_string()),
+            }),
         });
-        methods.add_meta_method(
-            LuaMetaMethod::Mul,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(
-                        this.x * other.x,
-                        this.y * other.y,
-                        this.z * other.z,
-                    ))
-                }
-                LuaValue::Number(num) => lua.create_userdata(Self::new(
-                    this.x * num as i16,
-                    this.y * num as i16,
-                    this.z * num as i16,
-                )),
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Mul.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
-        methods.add_meta_method(
-            LuaMetaMethod::Div,
-            |lua, this, other: LuaValue| match other {
-                LuaValue::UserData(_) => {
-                    let other = Self::from_lua(other, lua)?;
-                    lua.create_userdata(Self::new(
-                        this.x / other.x,
-                        this.y / other.y,
-                        this.z / other.z,
-                    ))
-                }
-                LuaValue::Number(num) => lua.create_userdata(Self::new(
-                    this.x / num as i16,
-                    this.y / num as i16,
-                    this.z / num as i16,
-                )),
-                _ => Err(LuaError::MetaMethodTypeError {
-                    method: LuaMetaMethod::Div.to_string(),
-                    type_name: other.type_name(),
-                    message: Some("expected Vector or number".to_string()),
-                }),
-            },
-        );
     }
 }
 
@@ -508,6 +566,208 @@ impl CFrame {
             position,
             orientation,
         }
+    }
+
+    #[cfg(feature = "impl")]
+    fn into_alg(self) -> na::IsometryMatrix3<f32> {
+        self.into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn look_at(at: Vector3, look: Vector3, up: Option<Vector3>) -> Self {
+        let up = up.unwrap_or_else(|| Vector3::new(0.0, 1.0, 0.0));
+        na::IsometryMatrix3::look_at_rh(&look.into(), &at.into(), &up.into()).into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_euler_angles_xyz(rx: f32, ry: f32, rz: f32) -> Self {
+        let r = na::Rotation3::from_euler_angles(rx, ry, rz);
+        let t = na::Translation3::new(0.0, 0.0, 0.0);
+        na::IsometryMatrix3::from_parts(t, r).into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_euler_angles_xyz(&self) -> (f32, f32, f32) {
+        na::Rotation3::from(self.orientation).euler_angles()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_euler_angles_yxz(rx: f32, ry: f32, rz: f32) -> Self {
+        todo!(
+            "from_euler_angles_yxz({}, {}, {}): No implementation provided by nalgebra...",
+            rx,
+            ry,
+            rz
+        )
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_euler_angles_yxz(&self) -> (f32, f32, f32) {
+        todo!("to_euler_angles_yxz(): No implementation provided by nalgebra...")
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_axis_angle(v: Vector3, r: f32) -> Self {
+        let v = na::UnitVector3::new_normalize(v.into());
+        let r = na::Rotation3::from_axis_angle(&v, r);
+        let t = na::Translation3::new(0.0, 0.0, 0.0);
+        na::IsometryMatrix3::from_parts(t, r).into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_axis_angle(&self) -> (Vector3, f32) {
+        let (v, r) = na::Rotation3::from(self.orientation)
+            .axis_angle()
+            .expect("axis angle should not be zero");
+        (v.into_inner().into(), r)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_matrix(pos: Vector3, vx: Vector3, vy: Vector3, vz: Option<Vector3>) -> Self {
+        let vx: na::Vector3<_> = vx.into();
+        let vy: na::Vector3<_> = vy.into();
+        let vz: na::Vector3<_> = vz.map_or_else(|| vx.cross(&vy).normalize(), |v| v.into());
+        let r = na::Rotation3::from_matrix(&na::Matrix3::from_columns(&[vx, vy, vz]));
+        na::IsometryMatrix3::from_parts(pos.into(), r).into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn rotation(&self) -> Self {
+        Self::new(Vector3::new(0.0, 0.0, 0.0), self.orientation)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn right_vector(&self) -> Vector3 {
+        let o = &self.orientation;
+        Vector3::new(o.x.x, o.y.x, o.z.x)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn up_vector(&self) -> Vector3 {
+        let o = &self.orientation;
+        Vector3::new(o.x.y, o.y.y, o.z.y)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn look_vector(&self) -> Vector3 {
+        let o = &self.orientation;
+        Vector3::new(-o.x.z, -o.y.z, -o.z.z)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn components(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
+        let p = &self.position;
+        let o = &self.orientation;
+        (
+            p.x, p.y, p.z, o.x.x, o.x.y, o.x.z, o.y.x, o.y.y, o.y.z, o.z.x, o.z.y, o.z.z,
+        )
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn inverse(&self) -> Self {
+        self.into_alg().inverse().into()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn orthonormalize(&self) -> Self {
+        Self::new(self.position, self.orientation.orthonormalize())
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn lerp(&self, goal: Self, alpha: f32) -> Self {
+        if alpha == 0.0 {
+            self.clone()
+        } else if alpha == 1.0 {
+            goal
+        } else {
+            let q1 = na::UnitQuaternion::from(self.orientation);
+            let q2 = na::UnitQuaternion::from(goal.orientation);
+            let q = q1.slerp(&q2, alpha);
+            let t = self
+                .position
+                .into_alg()
+                .lerp(&goal.position.into_alg(), alpha);
+            na::IsometryMatrix3::from_parts(t.into(), q.into()).into()
+        }
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_world_space(&self, cf: CFrame) -> Self {
+        *self * cf
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_object_space(&self, cf: CFrame) -> Self {
+        self.inverse() * cf
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn point_to_world_space(&self, v3: Vector3) -> Vector3 {
+        *self * v3
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn point_to_object_space(&self, v3: Vector3) -> Vector3 {
+        self.inverse() * v3
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn vector_to_world_space(&self, v3: Vector3) -> Vector3 {
+        (*self - self.position) * v3
+    }
+    #[cfg(feature = "impl")]
+    pub fn vector_to_object_space(&self, v3: Vector3) -> Vector3 {
+        (self.inverse() - self.inverse().position) * v3
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::IsometryMatrix3<f32>> for CFrame {
+    fn from(value: na::IsometryMatrix3<f32>) -> Self {
+        Self::new(value.translation.into(), value.rotation.into())
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<CFrame> for na::IsometryMatrix3<f32> {
+    fn from(value: CFrame) -> Self {
+        Self::from_parts(value.position.into(), value.orientation.into())
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Add<Vector3> for CFrame {
+    type Output = Self;
+    fn add(self, rhs: Vector3) -> Self::Output {
+        let pos = self.position;
+        let translated = Vector3::new(pos.x + rhs.x, pos.y + rhs.y, pos.z + rhs.z);
+        CFrame::new(translated, self.orientation)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Sub<Vector3> for CFrame {
+    type Output = Self;
+    fn sub(self, rhs: Vector3) -> Self::Output {
+        let pos = self.position;
+        let translated = Vector3::new(pos.x - rhs.x, pos.y - rhs.y, pos.z - rhs.z);
+        CFrame::new(translated, self.orientation)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Mul<Self> for CFrame {
+    type Output = CFrame;
+    fn mul(self, rhs: Self) -> Self::Output {
+        (self.into_alg() * rhs.into_alg()).into()
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Mul<Vector3> for CFrame {
+    type Output = Vector3;
+    fn mul(self, rhs: Vector3) -> Self::Output {
+        (na::Matrix3::from(self.orientation).transpose() * rhs.into_alg()).into()
     }
 }
 
@@ -538,35 +798,75 @@ impl LuaUserData for CFrame {
         fields.add_field_method_get("XVector", |_lua, this| Ok(this.orientation.x));
         fields.add_field_method_get("YVector", |_lua, this| Ok(this.orientation.y));
         fields.add_field_method_get("ZVector", |_lua, this| Ok(this.orientation.z));
-        fields.add_field_method_get("Rotation", |lua, this| {
-            lua.create_userdata(Self::new(Vector3::new(0.0, 0.0, 0.0), this.orientation))
-        });
-        fields.add_field_method_get("RightVector", |lua, this| {
-            let o = &this.orientation;
-            lua.create_userdata(Vector3::new(o.x.x, o.y.x, o.z.x))
-        });
-        fields.add_field_method_get("UpVector", |lua, this| {
-            let o = &this.orientation;
-            lua.create_userdata(Vector3::new(o.x.y, o.y.y, o.z.y))
-        });
-        fields.add_field_method_get("LookVector", |lua, this| {
-            let o = &this.orientation;
-            lua.create_userdata(Vector3::new(-o.x.z, -o.y.z, -o.z.z))
-        });
+        fields.add_field_method_get("Rotation", |_lua, this| Ok(this.rotation()));
+        fields.add_field_method_get("RightVector", |_lua, this| Ok(this.right_vector()));
+        fields.add_field_method_get("UpVector", |_lua, this| Ok(this.up_vector()));
+        fields.add_field_method_get("LookVector", |_lua, this| Ok(this.look_vector()));
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("GetComponents", |_lua, this, ()| {
-            let p = &this.position;
-            let o = &this.orientation;
-            Ok((p.x, p.y, p.z, o.x.x, o.x.y, o.x.z, o.y.x, o.y.y, o.y.z, o.z.x, o.z.y, o.z.z))
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Vector3| {
+            Ok(this + rhs)
         });
-        // WIP: missing more methods, missing arithmetic stuff
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Vector3| {
+            Ok(this - rhs)
+        });
+        methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| {
+            let type_err = Err(LuaError::MetaMethodTypeError {
+                method: LuaMetaMethod::Mul.to_string(),
+                type_name: rhs.type_name(),
+                message: Some("expected Vector3 or CFrame".to_string()),
+            });
+            let LuaValue::UserData(ref other) = rhs else { return type_err; };
+            if other.is::<CFrame>() {
+                (this * CFrame::from_lua(rhs, lua)?).into_lua(lua)
+            } else if other.is::<Vector3>() {
+                (this * Vector3::from_lua(rhs, lua)?).into_lua(lua)
+            } else {
+                type_err
+            }
+        });
+
+        methods.add_method("Inverse", |_lua, this, ()| Ok(this.inverse()));
+        methods.add_method("Lerp", |_lua, this, (goal, alpha): (CFrame, f32)| {
+            Ok(this.lerp(goal, alpha))
+        });
+        methods.add_method("ToWorldSpace", |_lua, this, cf: CFrame| {
+            Ok(this.to_world_space(cf))
+        });
+        methods.add_method("ToObjectSpace", |_lua, this, cf: CFrame| {
+            Ok(this.to_object_space(cf))
+        });
+        methods.add_method("PointToWorldSpace", |_lua, this, v3: Vector3| {
+            Ok(this.point_to_world_space(v3))
+        });
+        methods.add_method("PointToObjectSpace", |_lua, this, v3: Vector3| {
+            Ok(this.point_to_object_space(v3))
+        });
+        methods.add_method("VectorToWorldSpace", |_lua, this, v3: Vector3| {
+            Ok(this.vector_to_world_space(v3))
+        });
+        methods.add_method("VectorToObjectSpace", |_lua, this, v3: Vector3| {
+            Ok(this.vector_to_object_space(v3))
+        });
+        methods.add_method("GetComponents", |_lua, this, ()| Ok(this.components()));
+        methods.add_method("ToEulerAnglesXYZ", |_lua, this, ()| {
+            Ok(this.to_euler_angles_xyz())
+        });
+        methods.add_method("ToEulerAnglesYXZ", |_lua, this, ()| {
+            Ok(this.to_euler_angles_yxz())
+        });
+        methods.add_method("ToOrientation", |_lua, this, ()| {
+            Ok(this.to_euler_angles_yxz())
+        });
+        methods.add_method("ToAxisAngle", |_lua, this, ()| Ok(this.to_axis_angle()));
     }
 }
 
 /// Used to represent the `orientation` field of `CFrame` and not a standalone
 /// type in Roblox.
+///
+/// Internally represented in row-major, i.e., each Vector3 represents a row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Matrix3 {
     pub x: Vector3,
@@ -744,6 +1044,115 @@ impl Matrix3 {
             )),
             _ => Err(Error::from(Matrix3Error::BadRotationId { id })),
         }
+    }
+
+    #[cfg(feature = "impl")]
+    pub(super) fn orthonormalize(&self) -> Self {
+        let (mut e00, mut e01, mut e02) = (self.x.x, self.x.y, self.x.z);
+        let (mut e10, mut e11, mut e12) = (self.y.x, self.y.y, self.y.z);
+        let (mut e20, mut e21, mut e22) = (self.z.x, self.z.y, self.z.z);
+
+        // Algorithm uses Gram-Schmidt orthogonalization.  If 'this' matrix is
+        // M = [m0|m1|m2], then orthonormal output matrix is Q = [q0|q1|q2],
+        //
+        //   q0 = m0/|m0|
+        //   q1 = (m1-(q0*m1)q0)/|m1-(q0*m1)q0|
+        //   q2 = (m2-(q0*m2)q0-(q1*m2)q1)/|m2-(q0*m2)q0-(q1*m2)q1|
+        //
+        // where |V| indicates length of vector V and A*B indicates dot
+        // product of vectors A and B.
+
+        // compute q0
+        let f_inv_length = 1.0 / (e00 * e00 + e10 * e10 + e20 * e20).sqrt();
+
+        e00 *= f_inv_length;
+        e10 *= f_inv_length;
+        e20 *= f_inv_length;
+
+        // compute q1
+        let f_dot0 = e00 * e01 + e10 * e11 + e20 * e21;
+
+        e01 -= f_dot0 * e00;
+        e11 -= f_dot0 * e10;
+        e21 -= f_dot0 * e20;
+
+        let f_inv_length = 1.0 / (e01 * e01 + e11 * e11 + e21 * e21).sqrt();
+
+        e01 *= f_inv_length;
+        e11 *= f_inv_length;
+        e21 *= f_inv_length;
+
+        // compute q2
+        let f_dot1 = e01 * e02 + e11 * e12 + e21 * e22;
+
+        let f_dot0 = e00 * e02 + e10 * e12 + e20 * e22;
+
+        e02 -= f_dot0 * e00 + f_dot1 * e01;
+        e12 -= f_dot0 * e10 + f_dot1 * e11;
+        e22 -= f_dot0 * e20 + f_dot1 * e21;
+
+        let f_inv_length = 1.0 / (e02 * e02 + e12 * e12 + e22 * e22).sqrt();
+
+        e02 *= f_inv_length;
+        e12 *= f_inv_length;
+        e22 *= f_inv_length;
+
+        Self::new(
+            Vector3::new(e00, e01, e02),
+            Vector3::new(e10, e11, e12),
+            Vector3::new(e22, e21, e22),
+        )
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Matrix3> for na::Matrix3<f32> {
+    fn from(v: Matrix3) -> Self {
+        na::matrix![
+            v.x.x, v.x.y, v.x.z;
+            v.y.x, v.y.y, v.y.z;
+            v.z.x, v.z.y, v.z.z
+        ]
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::Matrix3<f32>> for Matrix3 {
+    fn from(value: na::Matrix3<f32>) -> Self {
+        let view = value.fixed_view::<3, 3>(0, 0);
+        Self::new(
+            Vector3::new(view[(0, 0)], view[(0, 1)], view[(0, 2)]),
+            Vector3::new(view[(1, 0)], view[(1, 1)], view[(1, 2)]),
+            Vector3::new(view[(2, 0)], view[(2, 1)], view[(2, 2)]),
+        )
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Matrix3> for na::Rotation3<f32> {
+    fn from(value: Matrix3) -> Self {
+        Self::from_matrix(&value.into())
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::Rotation3<f32>> for Matrix3 {
+    fn from(value: na::Rotation3<f32>) -> Self {
+        value.into_inner().into()
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<Matrix3> for na::UnitQuaternion<f32> {
+    fn from(value: Matrix3) -> Self {
+        Self::from_matrix(&value.into())
+    }
+}
+
+#[cfg(feature = "impl")]
+impl From<na::UnitQuaternion<f32>> for Matrix3 {
+    fn from(value: na::UnitQuaternion<f32>) -> Self {
+        value.to_rotation_matrix().into()
     }
 }
 
