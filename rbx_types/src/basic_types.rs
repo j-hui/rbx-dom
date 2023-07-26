@@ -1370,6 +1370,40 @@ impl Region3 {
     pub fn new(min: Vector3, max: Vector3) -> Self {
         Self { min, max }
     }
+
+    #[cfg(feature = "impl")]
+    pub fn expand_to_grid(&self, resolution: f32) -> Self {
+        todo!("expand_to_grid({})", resolution)
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Region3 {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            Vector3::from_lua(value.get("Min")?, lua)?,
+            Vector3::from_lua(value.get("Max")?, lua)?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Region3 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Min", |_lua, this| Ok(this.min));
+        fields.add_field_method_get("Max", |_lua, this| Ok(this.max));
+    }
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("ExpandToGrid", |_lua, this, resolution: f32| {
+            Ok(this.expand_to_grid(resolution))
+        });
+    }
 }
 
 /// A version of [`Region3`][Region3] that uses signed 16-bit integers instead
@@ -1392,6 +1426,30 @@ impl Region3int16 {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Region3int16 {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            Vector3int16::from_lua(value.get("Min")?, lua)?,
+            Vector3int16::from_lua(value.get("Max")?, lua)?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Region3int16 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Min", |_lua, this| Ok(this.min));
+        fields.add_field_method_get("Max", |_lua, this| Ok(this.max));
+    }
+}
+
 /// Represents a bounding rectangle in 2D space.
 ///
 /// ## See Also
@@ -1405,6 +1463,42 @@ pub struct Rect {
 impl Rect {
     pub fn new(min: Vector2, max: Vector2) -> Self {
         Self { min, max }
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn width(&self) -> f32 {
+        self.max.x - self.min.x
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn height(&self) -> f32 {
+        self.max.y - self.min.y
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Rect {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            Vector2::from_lua(value.get("Min")?, lua)?,
+            Vector2::from_lua(value.get("Max")?, lua)?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Rect {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Min", |_lua, this| Ok(this.min));
+        fields.add_field_method_get("Max", |_lua, this| Ok(this.max));
+        fields.add_field_method_get("Height", |_lua, this| Ok(this.height()));
+        fields.add_field_method_get("Width", |_lua, this| Ok(this.width()));
     }
 }
 
