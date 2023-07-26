@@ -686,11 +686,11 @@ impl CFrame {
     }
 
     #[cfg(feature = "impl")]
-    pub fn lerp(&self, goal: Self, alpha: f32) -> Self {
+    pub fn lerp(&self, goal: &CFrame, alpha: f32) -> Self {
         if alpha == 0.0 {
             self.clone()
         } else if alpha == 1.0 {
-            goal
+            *goal
         } else {
             let q1 = na::UnitQuaternion::from(self.orientation);
             let q2 = na::UnitQuaternion::from(goal.orientation);
@@ -704,13 +704,13 @@ impl CFrame {
     }
 
     #[cfg(feature = "impl")]
-    pub fn to_world_space(&self, cf: CFrame) -> Self {
-        *self * cf
+    pub fn to_world_space(&self, cf: &CFrame) -> Self {
+        *self * *cf
     }
 
     #[cfg(feature = "impl")]
-    pub fn to_object_space(&self, cf: CFrame) -> Self {
-        self.inverse() * cf
+    pub fn to_object_space(&self, cf: &CFrame) -> Self {
+        self.inverse() * *cf
     }
 
     #[cfg(feature = "impl")]
@@ -841,13 +841,13 @@ impl LuaUserData for CFrame {
 
         methods.add_method("Inverse", |_lua, this, ()| Ok(this.inverse()));
         methods.add_method("Lerp", |_lua, this, (goal, alpha): (CFrame, f32)| {
-            Ok(this.lerp(goal, alpha))
+            Ok(this.lerp(&goal, alpha))
         });
         methods.add_method("ToWorldSpace", |_lua, this, cf: CFrame| {
-            Ok(this.to_world_space(cf))
+            Ok(this.to_world_space(&cf))
         });
         methods.add_method("ToObjectSpace", |_lua, this, cf: CFrame| {
-            Ok(this.to_object_space(cf))
+            Ok(this.to_object_space(&cf))
         });
         methods.add_method("PointToWorldSpace", |_lua, this, v3: Vector3| {
             Ok(this.point_to_world_space(v3))
