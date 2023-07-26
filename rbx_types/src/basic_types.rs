@@ -9,7 +9,7 @@ use nalgebra as na;
 use colors_transform::{Color, Hsl, Rgb};
 
 #[cfg(feature = "impl")]
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 #[cfg(feature = "mlua")]
 use mlua::prelude::*;
@@ -69,6 +69,13 @@ macro_rules! impl_vector_ops {
             type Output = Self;
             fn div(self, rhs: $scalar_t) -> Self::Output {
                 (self.into_alg() / rhs).into()
+            }
+        }
+
+        impl Neg for $vec_t {
+            type Output = Self;
+            fn neg(self) -> Self::Output {
+                (-self.into_alg()).into()
             }
         }
     };
@@ -182,6 +189,7 @@ impl LuaUserData for Vector2 {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
         methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
             LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
             LuaValue::Number(num) => Ok(this * num as f32),
@@ -270,6 +278,7 @@ impl LuaUserData for Vector2int16 {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
         methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
             LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
             LuaValue::Number(num) => Ok(this * num as i16),
@@ -434,6 +443,7 @@ impl LuaUserData for Vector3 {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
         methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
             LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
             LuaValue::Number(num) => Ok(this * num as f32),
@@ -525,6 +535,7 @@ impl LuaUserData for Vector3int16 {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
         methods.add_meta_method(LuaMetaMethod::Mul, |lua, &this, rhs: LuaValue| match rhs {
             LuaValue::UserData(_) => Ok(this * Self::from_lua(rhs, lua)?),
             LuaValue::Number(num) => Ok(this * num as i16),
@@ -1519,6 +1530,47 @@ impl UDim {
     }
 }
 
+#[cfg(feature = "impl")]
+impl Add for UDim {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.scale + rhs.scale, self.offset + rhs.offset)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Sub for UDim {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.scale - rhs.scale, self.offset - rhs.offset)
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for UDim {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("Scale")?, value.get("Offset")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for UDim {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Scale", |_lua, this| Ok(this.scale));
+        fields.add_field_method_get("Offset", |_lua, this| Ok(this.offset));
+    }
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+    }
+}
+
 /// Standard 2D unit for measuring UI given as `scale`, a fraction of the
 /// container's size and `offset`, display-indepdendent pixels.
 ///
@@ -1533,6 +1585,47 @@ pub struct UDim2 {
 impl UDim2 {
     pub fn new(x: UDim, y: UDim) -> Self {
         Self { x, y }
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Add for UDim2 {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Sub for UDim2 {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for UDim2 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("X")?, value.get("Y")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for UDim2 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("X", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+    }
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
+        methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
     }
 }
 
