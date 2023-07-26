@@ -1395,8 +1395,23 @@ impl Region3 {
     }
 
     #[cfg(feature = "impl")]
-    pub fn expand_to_grid(&self, resolution: f32) -> Self {
-        todo!("expand_to_grid({})", resolution)
+    pub fn expand_to_grid(&self, resolution: f32) -> Option<Self> {
+        if !resolution.is_normal() {
+            return None;
+        }
+        let min = self.min / resolution;
+        let max = self.max / resolution;
+        let min = Vector3::new(
+            min.x.floor() * resolution,
+            min.y.floor() * resolution,
+            min.z.floor() * resolution,
+        );
+        let max = Vector3::new(
+            max.x.floor() * resolution,
+            max.y.floor() * resolution,
+            max.z.floor() * resolution,
+        );
+        Some(Self::new(min, max))
     }
 }
 
@@ -1424,7 +1439,8 @@ impl LuaUserData for Region3 {
     }
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("ExpandToGrid", |_lua, this, resolution: f32| {
-            Ok(this.expand_to_grid(resolution))
+            this.expand_to_grid(resolution)
+                .ok_or_else(|| LuaError::external("Resolution has to be a positive number"))
         });
     }
 }
