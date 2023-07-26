@@ -1308,6 +1308,51 @@ impl Ray {
     pub fn new(origin: Vector3, direction: Vector3) -> Self {
         Self { origin, direction }
     }
+
+    #[cfg(feature = "impl")]
+    pub fn unit(&self) -> Self {
+        Self::new(self.origin, self.direction.into_alg().normalize().into())
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn closest_point(&self) -> Vector3 {
+        todo!()
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn distance(&self) -> f32 {
+        todo!()
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Ray {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            Vector3::from_lua(value.get("Origin")?, lua)?,
+            Vector3::from_lua(value.get("Direction")?, lua)?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Ray {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Origin", |_lua, this| Ok(this.origin));
+        fields.add_field_method_get("Direction", |_lua, this| Ok(this.direction));
+        fields.add_field_method_get("Unit", |_lua, this| Ok(this.unit()));
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("ClosestPoint", |_lua, this, ()| Ok(this.closest_point()));
+        methods.add_method("Distance", |_lua, this, ()| Ok(this.distance()));
+    }
 }
 
 /// Represents a bounding box in 3D space.
