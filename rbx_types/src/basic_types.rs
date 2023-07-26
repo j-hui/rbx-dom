@@ -6,6 +6,9 @@ use crate::Error;
 use nalgebra as na;
 
 #[cfg(feature = "impl")]
+use colors_transform::{Color, Hsl, Rgb};
+
+#[cfg(feature = "impl")]
 use std::ops::{Add, Div, Mul, Sub};
 
 #[cfg(feature = "mlua")]
@@ -172,8 +175,6 @@ impl LuaUserData for Vector2 {
     fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("X", |_lua, this| Ok(this.x));
         fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
-        fields.add_field_method_get("x", |_lua, this| Ok(this.x));
-        fields.add_field_method_get("y", |_lua, this| Ok(this.y));
         fields.add_field_method_get("Magnitude", |_lua, this| Ok(this.magnitude()));
         fields.add_field_method_get("Unit", |_lua, this| Ok(this.unit()));
     }
@@ -1172,6 +1173,72 @@ pub struct Color3 {
 impl Color3 {
     pub fn new(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b }
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_rgb(red: f32, green: f32, blue: f32) -> Self {
+        Self::new(red / 255.0, green / 255.0, blue / 255.0)
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_hsv(hue: f32, saturation: f32, value: f32) -> Self {
+        let c = Hsl::from(hue * 359.0, saturation * 100.0, value * 100.0).to_rgb();
+        Self::new(c.get_red(), c.get_green(), c.get_blue())
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn from_hex(hex: &str) -> Option<Self> {
+        let c = Rgb::from_hex_str(hex).ok()?;
+        Some(Self::new(c.get_red(), c.get_green(), c.get_blue()))
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_hsv(&self) -> (f32, f32, f32) {
+        let c = Rgb::from(self.r, self.g, self.b).to_hsl();
+        (
+            c.get_hue() / 359.0,
+            c.get_saturation() / 100.0,
+            c.get_lightness() / 100.0,
+        )
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_hex(&self) -> String {
+        Rgb::from(self.r, self.g, self.b).to_css_hex_string()
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Color3 {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("R")?, value.get("G")?, value.get("B")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Color3 {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("R", |_lua, this| Ok(this.r));
+        fields.add_field_method_get("G", |_lua, this| Ok(this.g));
+        fields.add_field_method_get("B", |_lua, this| Ok(this.b));
+    }
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("Lerp", |_lua, this, (color, alpha): (Color3, f32)| {
+            let beta = 1.0 - alpha;
+            Ok(Self::new(
+                this.r * alpha + color.r * beta,
+                this.g * alpha + color.g * beta,
+                this.b * alpha + color.b * beta,
+            ))
+        });
+        methods.add_method("ToHSV", |_lua, this, ()| Ok(this.to_hsv()));
+        methods.add_method("ToHex", |_lua, this, ()| Ok(this.to_hex()));
     }
 }
 
