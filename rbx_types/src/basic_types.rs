@@ -1346,17 +1346,14 @@ impl Ray {
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Ray {
-    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
         let LuaValue::UserData(value) = value else {
             return Err(LuaError::UserDataTypeMismatch);
         };
         if !value.is::<Self>() {
             return Err(LuaError::UserDataTypeMismatch);
         }
-        Ok(Self::new(
-            Vector3::from_lua(value.get("Origin")?, lua)?,
-            Vector3::from_lua(value.get("Direction")?, lua)?,
-        ))
+        Ok(Self::new(value.get("Origin")?, value.get("Direction")?))
     }
 }
 
@@ -1417,17 +1414,14 @@ impl Region3 {
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Region3 {
-    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
         let LuaValue::UserData(value) = value else {
             return Err(LuaError::UserDataTypeMismatch);
         };
         if !value.is::<Self>() {
             return Err(LuaError::UserDataTypeMismatch);
         }
-        Ok(Self::new(
-            Vector3::from_lua(value.get("Min")?, lua)?,
-            Vector3::from_lua(value.get("Max")?, lua)?,
-        ))
+        Ok(Self::new(value.get("Min")?, value.get("Max")?))
     }
 }
 
@@ -1467,17 +1461,14 @@ impl Region3int16 {
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Region3int16 {
-    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
         let LuaValue::UserData(value) = value else {
             return Err(LuaError::UserDataTypeMismatch);
         };
         if !value.is::<Self>() {
             return Err(LuaError::UserDataTypeMismatch);
         }
-        Ok(Self::new(
-            Vector3int16::from_lua(value.get("Min")?, lua)?,
-            Vector3int16::from_lua(value.get("Max")?, lua)?,
-        ))
+        Ok(Self::new(value.get("Min")?, value.get("Max")?))
     }
 }
 
@@ -1517,17 +1508,14 @@ impl Rect {
 
 #[cfg(feature = "mlua")]
 impl<'lua> FromLua<'lua> for Rect {
-    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
         let LuaValue::UserData(value) = value else {
             return Err(LuaError::UserDataTypeMismatch);
         };
         if !value.is::<Self>() {
             return Err(LuaError::UserDataTypeMismatch);
         }
-        Ok(Self::new(
-            Vector2::from_lua(value.get("Min")?, lua)?,
-            Vector2::from_lua(value.get("Max")?, lua)?,
-        ))
+        Ok(Self::new(value.get("Min")?, value.get("Max")?))
     }
 }
 
