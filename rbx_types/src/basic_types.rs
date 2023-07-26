@@ -1326,13 +1326,21 @@ impl Ray {
     }
 
     #[cfg(feature = "impl")]
-    pub fn closest_point(&self) -> Vector3 {
-        todo!()
+    pub fn closest_point(&self, point: &Vector3) -> Vector3 {
+        let t = self
+            .direction
+            .into_alg()
+            .dot(&(point.into_alg() - self.origin.into_alg()));
+        if t < 0.0 {
+            self.origin
+        } else {
+            self.origin + self.direction * t
+        }
     }
 
     #[cfg(feature = "impl")]
-    pub fn distance(&self) -> f32 {
-        todo!()
+    pub fn distance(&self, point: &Vector3) -> f32 {
+        (self.closest_point(point) - *point).magnitude()
     }
 }
 
@@ -1361,8 +1369,12 @@ impl LuaUserData for Ray {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("ClosestPoint", |_lua, this, ()| Ok(this.closest_point()));
-        methods.add_method("Distance", |_lua, this, ()| Ok(this.distance()));
+        methods.add_method("ClosestPoint", |_lua, this, point: Vector3| {
+            Ok(this.closest_point(&point))
+        });
+        methods.add_method("Distance", |_lua, this, point: Vector3| {
+            Ok(this.distance(&point))
+        });
     }
 }
 
