@@ -1697,6 +1697,27 @@ impl NumberRange {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for NumberRange {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("Min")?, value.get("Max")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for NumberRange {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Min", |_lua, this| Ok(this.min));
+        fields.add_field_method_get("Max", |_lua, this| Ok(this.max));
+    }
+}
+
 /// A series of colors that can be tweened through.
 ///
 /// ## See Also
@@ -1709,6 +1730,28 @@ impl NumberRange {
 )]
 pub struct ColorSequence {
     pub keypoints: Vec<ColorSequenceKeypoint>,
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for ColorSequence {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self {
+            keypoints: value.get("Keypoints")?,
+        })
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for ColorSequence {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Keypoints", |_lua, this| Ok(this.keypoints.clone()));
+    }
 }
 
 /// A single color and point in time of a [`ColorSequence`][ColorSequence]
@@ -1734,6 +1777,27 @@ impl ColorSequenceKeypoint {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for ColorSequenceKeypoint {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(value.get("Time")?, value.get("Color")?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for ColorSequenceKeypoint {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Time", |_lua, this| Ok(this.time));
+        fields.add_field_method_get("Value", |_lua, this| Ok(this.color));
+    }
+}
+
 /// A sequence of numbers on a timeline. Each point contains a timestamp, a
 /// value, and a range that allows for randomized values.
 ///
@@ -1747,6 +1811,28 @@ impl ColorSequenceKeypoint {
 )]
 pub struct NumberSequence {
     pub keypoints: Vec<NumberSequenceKeypoint>,
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for NumberSequence {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self {
+            keypoints: value.get("Keypoints")?,
+        })
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for NumberSequence {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Keypoints", |_lua, this| Ok(this.keypoints.clone()));
+    }
 }
 
 /// A single value, envelope, and point in time of a [`NumberSequence`][NumberSequence]
@@ -1775,6 +1861,32 @@ impl NumberSequenceKeypoint {
             value,
             envelope,
         }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for NumberSequenceKeypoint {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            value.get("Time")?,
+            value.get("Value")?,
+            value.get("envelope")?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for NumberSequenceKeypoint {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Time", |_lua, this| Ok(this.time));
+        fields.add_field_method_get("Envelope", |_lua, this| Ok(this.envelope));
+        fields.add_field_method_get("Value", |_lua, this| Ok(this.value));
     }
 }
 
