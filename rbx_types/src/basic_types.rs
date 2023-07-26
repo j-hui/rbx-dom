@@ -1556,6 +1556,14 @@ impl UDim {
     pub fn new(scale: f32, offset: i32) -> Self {
         Self { scale, offset }
     }
+
+    #[cfg(feature = "impl")]
+    pub fn lerp(&self, goal: &UDim, alpha: f32) -> Self {
+        let beta = 1.0 - alpha;
+        let scale = self.scale * alpha + goal.scale * beta;
+        let offset = self.offset as f32 * alpha + goal.offset as f32 * beta;
+        Self::new(scale, offset.round() as i32)
+    }
 }
 
 #[cfg(feature = "impl")]
@@ -1571,6 +1579,14 @@ impl Sub for UDim {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.scale - rhs.scale, self.offset - rhs.offset)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Neg for UDim {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Self::new(-self.scale, -self.offset)
     }
 }
 
@@ -1596,6 +1612,7 @@ impl LuaUserData for UDim {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
     }
 }
 
@@ -1614,6 +1631,11 @@ impl UDim2 {
     pub fn new(x: UDim, y: UDim) -> Self {
         Self { x, y }
     }
+
+    #[cfg(feature = "impl")]
+    pub fn lerp(&self, goal: &UDim2, alpha: f32) -> Self {
+        Self::new(self.x.lerp(&goal.x, alpha), self.y.lerp(&goal.y, alpha))
+    }
 }
 
 #[cfg(feature = "impl")]
@@ -1629,6 +1651,14 @@ impl Sub for UDim2 {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+#[cfg(feature = "impl")]
+impl Neg for UDim2 {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Self::new(-self.x, -self.y)
     }
 }
 
@@ -1650,10 +1680,16 @@ impl LuaUserData for UDim2 {
     fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
         fields.add_field_method_get("X", |_lua, this| Ok(this.x));
         fields.add_field_method_get("Y", |_lua, this| Ok(this.y));
+        fields.add_field_method_get("Width", |_lua, this| Ok(this.x));
+        fields.add_field_method_get("Height", |_lua, this| Ok(this.y));
     }
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Add, |_lua, &this, rhs: Self| Ok(this + rhs));
         methods.add_meta_method(LuaMetaMethod::Sub, |_lua, &this, rhs: Self| Ok(this - rhs));
+        methods.add_meta_method(LuaMetaMethod::Unm, |_lua, &this, ()| Ok(-this));
+        methods.add_method("Lerp", |_lua, this, (goal, alpha): (UDim2, f32)| {
+            Ok(this.lerp(&goal, alpha))
+        })
     }
 }
 
