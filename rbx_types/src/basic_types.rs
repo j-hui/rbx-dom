@@ -9,6 +9,9 @@ use nalgebra as na;
 use colors_transform::{Color, Hsl, Rgb};
 
 #[cfg(feature = "impl")]
+use std::f32::consts::PI;
+
+#[cfg(feature = "impl")]
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 #[cfg(feature = "mlua")]
@@ -592,30 +595,121 @@ impl CFrame {
     }
 
     #[cfg(feature = "impl")]
-    pub fn from_euler_angles_xyz(rx: f32, ry: f32, rz: f32) -> Self {
-        let r = na::Rotation3::from_euler_angles(rx, ry, rz);
+    pub fn from_euler_angles(rx: f32, ry: f32, rz: f32, order: Option<RotationOrder>) -> Self {
         let t = na::Translation3::new(0.0, 0.0, 0.0);
+        let rx = na::Rotation3::from_axis_angle(&na::OVector::x_axis(), rx);
+        let ry = na::Rotation3::from_axis_angle(&na::OVector::y_axis(), ry);
+        let rz = na::Rotation3::from_axis_angle(&na::OVector::z_axis(), rz);
+        let r = match order.unwrap_or_default() {
+            RotationOrder::XYZ => rz * ry * rx,
+            RotationOrder::XZY => ry * rz * rx,
+            RotationOrder::YZX => rx * rz * ry,
+            RotationOrder::YXZ => rz * rx * ry,
+            RotationOrder::ZXY => ry * rx * rz,
+            RotationOrder::ZYX => rx * ry * rz,
+        };
         na::IsometryMatrix3::from_parts(t, r).into()
     }
 
     #[cfg(feature = "impl")]
-    pub fn to_euler_angles_xyz(&self) -> (f32, f32, f32) {
-        na::Rotation3::from(self.orientation).euler_angles()
+    pub fn from_euler_angles_xyz(rx: f32, ry: f32, rz: f32) -> Self {
+        Self::from_euler_angles(rx, ry, rz, Some(RotationOrder::XYZ))
     }
 
     #[cfg(feature = "impl")]
     pub fn from_euler_angles_yxz(rx: f32, ry: f32, rz: f32) -> Self {
-        todo!(
-            "from_euler_angles_yxz({}, {}, {}): No implementation provided by nalgebra...",
-            rx,
-            ry,
-            rz
-        )
+        Self::from_euler_angles(rx, ry, rz, Some(RotationOrder::YXZ))
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_euler_angles(&self, order: Option<RotationOrder>) -> (f32, f32, f32) {
+        let threshold = 0.9999996; // equivalent to 89.95 degrees
+
+        // Reference: https://www.geometrictools.com/Documentation/EulerAngles.pdf
+
+        // Some short-hand to make the notation closer to pseudocode from reference.
+        let r = self.orientation;
+        let (r00, r01, r02, r10, r11, r12, r20, r21, r22) = (
+            r.x.x, r.x.y, r.x.z, r.y.x, r.y.y, r.y.z, r.z.x, r.z.y, r.z.z,
+        );
+        let (asin, atan2) = (f32::asin, f32::atan2);
+
+        // All factorizations follow this pattern:
+        macro_rules! factor_rotation_by {
+            ($simplest_term:expr, $general_case:expr, $negative_case:expr, $positive_case:expr) => {
+                if $simplest_term < threshold {
+                    if $simplest_term > -threshold {
+                        $general_case
+                    } else {
+                        $negative_case
+                    }
+                } else {
+                    $positive_case
+                }
+            };
+        }
+
+        // Note that xyz order in the Reference means RotationOrder::ZYX
+        match order.unwrap_or_default() {
+            RotationOrder::ZYX => factor_rotation_by!(
+                r02,
+                (atan2(-r12, r22), asin(r02), atan2(-r01, r00)),
+                // Not a unique solution: rz − rx = atan2(r10 , r11)
+                (atan2(-r10, r11), -PI / 2.0, 0.0),
+                // Not a unique solution: rz + rx = atan2(r10, r11)
+                (atan2(r10, r11), PI / 2.0, 0.0)
+            ),
+            RotationOrder::YZX => factor_rotation_by!(
+                r01,
+                (atan2(r21, r11), atan2(r02, r00), asin(-r01)),
+                // Not a unique solution: ry - rx = atan2(-r20, r22)
+                (-atan2(-r20, r22), 0.0, PI / 2.0),
+                // Not a unique solution: ry + rx = atan2(-r20, r22)
+                (atan2(-r20, r22), 0.0, -PI / 2.0)
+            ),
+            RotationOrder::ZXY => factor_rotation_by!(
+                r12,
+                (asin(-r12), atan2(r02, r22), atan2(r10, r11)),
+                // Not a unique solution: rz - ry = atan2(-r01, r00)
+                (PI / 2.0, -atan2(-r01, r00), 0.0),
+                // Not a unique solution: rz + ry = atan2(-r01, r00)
+                (-PI / 2.0, atan2(-r01, r00), 0.0)
+            ),
+            RotationOrder::XZY => factor_rotation_by!(
+                r10,
+                (atan2(-r12, r11), atan2(-r20, r00), asin(r10)),
+                // Not a unique solution: rx - ry = atan2(-r21, r22)
+                (0.0, -atan2(r21, r22), -PI / 2.0),
+                // Not a unique solution: rx + ry = atan2(-r21, r22)
+                (0.0, atan2(r21, r22), PI / 2.0)
+            ),
+            RotationOrder::YXZ => factor_rotation_by!(
+                r21,
+                (asin(r21), atan2(-r01, r11), atan2(-r20, r22)),
+                // Not a unique solution: ry - rz = atan2(r02, r00)
+                (-PI / 2.0, 0.0, -atan2(r02, r00)),
+                // Not a unique solution: ry + rz = atan2(r02, r00)
+                (PI / 2.0, 0.0, atan2(r02, r00))
+            ),
+            RotationOrder::XYZ => factor_rotation_by!(
+                r20,
+                (atan2(r21, r22), asin(-r20), atan2(r10, r00)),
+                // Not a unique solution: rx - rz = atan2(-r12, r11)
+                (0.0, PI / 2.0, -atan2(-r12, r11)),
+                // Not a unique solution: rx + rz = atan2(-r12, r11)
+                (0.0, -PI / 2.0, -atan2(-r12, r11))
+            ),
+        }
+    }
+
+    #[cfg(feature = "impl")]
+    pub fn to_euler_angles_xyz(&self) -> (f32, f32, f32) {
+        self.to_euler_angles(Some(RotationOrder::XYZ))
     }
 
     #[cfg(feature = "impl")]
     pub fn to_euler_angles_yxz(&self) -> (f32, f32, f32) {
-        todo!("to_euler_angles_yxz(): No implementation provided by nalgebra...")
+        self.to_euler_angles(Some(RotationOrder::YXZ))
     }
 
     #[cfg(feature = "impl")]
@@ -872,6 +966,26 @@ impl LuaUserData for CFrame {
             Ok(this.to_euler_angles_yxz())
         });
         methods.add_method("ToAxisAngle", |_lua, this, ()| Ok(this.to_axis_angle()));
+    }
+}
+
+/// Euler Angles encode a rotation in 3D space via a sequence of 3 rotations along the 3 axis
+/// X Y Z. The [`RotationOrder`] Enum specifies the order in which the 3 rotations are applied.
+#[cfg(feature = "impl")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RotationOrder {
+    XYZ = 0,
+    XZY = 1,
+    YZX = 2,
+    YXZ = 3,
+    ZXY = 4,
+    ZYX = 5,
+}
+
+#[cfg(feature = "impl")]
+impl Default for RotationOrder {
+    fn default() -> Self {
+        Self::XYZ
     }
 }
 
@@ -1982,5 +2096,58 @@ mod serde_test {
             },
             "[[1.0,2.0,3.0],[4.0,5.0,6.0],[7.0,8.0,9.0]]",
         );
+    }
+}
+
+#[cfg(all(test, feature = "impl"))]
+mod algebra_test {
+    use super::*;
+
+    fn euler_angles_identity(rx: f32, ry: f32, rz: f32) {
+        for order in [
+            RotationOrder::XYZ,
+            RotationOrder::XZY,
+            RotationOrder::YZX,
+            RotationOrder::YXZ,
+            RotationOrder::ZXY,
+            RotationOrder::ZYX,
+        ] {
+            let rot = CFrame::from_euler_angles(rx, ry, rz, Some(order));
+            let (rx_, ry_, rz_) = rot.to_euler_angles(Some(order));
+            let rot_ = CFrame::from_euler_angles(rx_, ry_, rz_, Some(order));
+
+            macro_rules! assert_eq_eps {
+                ($x:expr, $y:expr) => {
+                    if !($x - $y < 0.0001 || $y - $x < 0.0001 ) {
+                        panic!("rotation is not the same for {}, {}, {}, {:#?}\nexpected: {:#?}\ngot: {:#?}",
+                            rx, ry, rz, order, rot, rot_);
+                    }
+                };
+            }
+            let (o, o_) = (rot.orientation, rot_.orientation);
+            assert_eq_eps!(o.x.x, o_.x.x);
+            assert_eq_eps!(o.x.y, o_.x.y);
+            assert_eq_eps!(o.x.z, o_.x.z);
+            assert_eq_eps!(o.y.x, o_.y.x);
+            assert_eq_eps!(o.y.y, o_.y.y);
+            assert_eq_eps!(o.y.z, o_.y.z);
+            assert_eq_eps!(o.z.x, o_.z.x);
+            assert_eq_eps!(o.z.y, o_.z.y);
+            assert_eq_eps!(o.z.z, o_.z.z);
+        }
+    }
+
+    #[test]
+    fn validate_euler_angles() {
+        euler_angles_identity(0.2, 0.2, 0.2);
+        euler_angles_identity(0.1, 0.2, 0.3);
+        euler_angles_identity(0.1, 0.0, 0.3);
+        euler_angles_identity(0.2, 0.0, 0.0);
+        euler_angles_identity(0.2, 0.2, 0.2);
+        euler_angles_identity(0.0, 0.0, 0.0);
+        euler_angles_identity(1.0, 1.0, 1.0);
+        euler_angles_identity(-1.0, -1.0, -1.0);
+        euler_angles_identity(-0.1, -0.3, 0.2);
+        euler_angles_identity(-0.1, 0.3, -0.2);
     }
 }
