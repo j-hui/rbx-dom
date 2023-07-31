@@ -1,3 +1,6 @@
+#[cfg(feature = "mlua")]
+use mlua::prelude::*;
+
 /// A reference to a Roblox asset.
 ///
 /// When exposed to Lua, this is just a string.
@@ -58,5 +61,19 @@ impl AsMut<str> for Content {
 impl AsMut<String> for Content {
     fn as_mut(&mut self) -> &mut String {
         &mut self.url
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Content {
+    fn from_lua(value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
+        Ok(Self::from(String::from_lua(value, lua)?))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> IntoLua<'lua> for Content {
+    fn into_lua(self, lua: &'lua Lua) -> LuaResult<LuaValue<'lua>> {
+        self.into_string().into_lua(lua)
     }
 }

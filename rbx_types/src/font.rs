@@ -1,3 +1,9 @@
+#[cfg(feature = "mlua")]
+use mlua::prelude::*;
+
+#[cfg(feature = "mlua")]
+use crate::content::Content;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FontWeight {
@@ -43,6 +49,20 @@ impl FontWeight {
     }
 }
 
+#[cfg(feature = "mlua")]
+impl<'lua> IntoLua<'lua> for FontWeight {
+    fn into_lua(self, lua: &'lua Lua) -> LuaResult<LuaValue<'lua>> {
+        self.as_u16().into_lua(lua)
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for FontWeight {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        Self::from_u16(u16::from_lua(value, lua)?).ok_or_else(|| LuaError::UserDataTypeMismatch)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FontStyle {
@@ -65,6 +85,20 @@ impl FontStyle {
             FontStyle::Normal => 0,
             FontStyle::Italic => 1,
         }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> IntoLua<'lua> for FontStyle {
+    fn into_lua(self, lua: &'lua Lua) -> LuaResult<LuaValue<'lua>> {
+        self.as_u8().into_lua(lua)
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for FontStyle {
+    fn from_lua(value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        Self::from_u8(u8::from_lua(value, lua)?).ok_or_else(|| LuaError::UserDataTypeMismatch)
     }
 }
 
@@ -107,5 +141,39 @@ impl Font {
             family: family.to_owned(),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Font {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            &value.get::<_, String>("Family")?,
+            value.get("Weight")?,
+            value.get("Style")?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Font {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("Family", |_lua, this| {
+            Ok(Content::from(&this.family as &str))
+        });
+        fields.add_field_method_get("Weight", |_lua, this| Ok(this.weight));
+        fields.add_field_method_get("Style", |_lua, this| Ok(this.style));
+        fields.add_field_method_get("Bold", |_lua, this| {
+            Ok(match this.weight {
+                FontWeight::SemiBold | FontWeight::Bold | FontWeight::ExtraBold => true,
+                _ => false,
+            })
+        });
     }
 }
