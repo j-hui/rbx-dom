@@ -2,6 +2,9 @@ use std::fmt;
 
 use crate::lister::Lister;
 
+#[cfg(feature = "mlua")]
+use mlua::prelude::*;
+
 bitflags::bitflags! {
     struct FaceFlags: u8 {
         const RIGHT = 1;
@@ -49,6 +52,26 @@ impl Faces {
 }
 
 impl Faces {
+    pub fn new(right: bool, top: bool, back: bool, left: bool, bottom: bool, front: bool) -> Self {
+        macro_rules! flag_if {
+            ($cond:ident, $flag_name:ident) => {
+                if $cond {
+                    FaceFlags::$flag_name
+                } else {
+                    FaceFlags::empty()
+                }
+            };
+        }
+
+        Self {
+            flags: flag_if!(right, RIGHT)
+                | flag_if!(top, TOP)
+                | flag_if!(back, BACK)
+                | flag_if!(left, LEFT)
+                | flag_if!(bottom, BOTTOM)
+                | flag_if!(front, FRONT),
+        }
+    }
     pub const fn empty() -> Self {
         Self {
             flags: FaceFlags::empty(),
@@ -76,6 +99,48 @@ impl Faces {
     #[cfg(feature = "serde")]
     fn len(self) -> usize {
         self.bits().count_ones() as usize
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for Faces {
+    fn from_lua(value: LuaValue<'lua>, _lua: &'lua Lua) -> LuaResult<Self> {
+        let LuaValue::UserData(value) = value else {
+            return Err(LuaError::UserDataTypeMismatch);
+        };
+        if !value.is::<Self>() {
+            return Err(LuaError::UserDataTypeMismatch);
+        }
+        Ok(Self::new(
+            value.get("Right")?,
+            value.get("Top")?,
+            value.get("Back")?,
+            value.get("Left")?,
+            value.get("Bottom")?,
+            value.get("Front")?,
+        ))
+    }
+}
+
+#[cfg(feature = "mlua")]
+impl LuaUserData for Faces {
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        macro_rules! impl_flag {
+            ($field_name:literal, $flag_name:ident) => {
+                fields.add_field_method_get($field_name, |_lua, this| {
+                    Ok(this.flags.contains(FaceFlags::$flag_name))
+                });
+                fields.add_field_method_set($field_name, |_lua, this, val: bool| {
+                    Ok(this.flags.set(FaceFlags::$flag_name, val))
+                })
+            };
+        }
+        impl_flag!("Right", RIGHT);
+        impl_flag!("Top", TOP);
+        impl_flag!("Back", BACK);
+        impl_flag!("Left", LEFT);
+        impl_flag!("Bottom", BOTTOM);
+        impl_flag!("Front", FRONT);
     }
 }
 

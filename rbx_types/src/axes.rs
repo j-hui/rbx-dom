@@ -39,10 +39,19 @@ impl Axes {
 impl Axes {
     #[cfg(feature = "impl")]
     pub fn new(x: bool, y: bool, z: bool) -> Self {
-        let x = if x { AxisFlags::X } else { AxisFlags::empty() };
-        let y = if y { AxisFlags::Y } else { AxisFlags::empty() };
-        let z = if z { AxisFlags::Z } else { AxisFlags::empty() };
-        Self { flags: x | y | z }
+        macro_rules! flag_if {
+            ($cond:ident, $flag_name:ident) => {
+                if $cond {
+                    AxisFlags::$flag_name
+                } else {
+                    AxisFlags::empty()
+                }
+            };
+        }
+
+        Self {
+            flags: flag_if!(x, X) | flag_if!(y, Y) | flag_if!(z, Z),
+        }
     }
 
     pub const fn empty() -> Self {
@@ -91,18 +100,19 @@ impl<'lua> FromLua<'lua> for Axes {
 #[cfg(feature = "mlua")]
 impl LuaUserData for Axes {
     fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("X", |_lua, this| Ok(this.flags.contains(AxisFlags::X)));
-        fields.add_field_method_get("Y", |_lua, this| Ok(this.flags.contains(AxisFlags::Y)));
-        fields.add_field_method_get("Z", |_lua, this| Ok(this.flags.contains(AxisFlags::Z)));
-        fields.add_field_method_set("X", |_lua, this, val: bool| {
-            Ok(this.flags.set(AxisFlags::X, val))
-        });
-        fields.add_field_method_set("Y", |_lua, this, val: bool| {
-            Ok(this.flags.set(AxisFlags::Y, val))
-        });
-        fields.add_field_method_set("Z", |_lua, this, val: bool| {
-            Ok(this.flags.set(AxisFlags::Z, val))
-        });
+        macro_rules! impl_flag {
+            ($field_name:literal, $flag_name:ident) => {
+                fields.add_field_method_get($field_name, |_lua, this| {
+                    Ok(this.flags.contains(AxisFlags::$flag_name))
+                });
+                fields.add_field_method_set($field_name, |_lua, this, val: bool| {
+                    Ok(this.flags.set(AxisFlags::$flag_name, val))
+                })
+            };
+        }
+        impl_flag!("X", X);
+        impl_flag!("Y", Y);
+        impl_flag!("Z", Z);
     }
 }
 
